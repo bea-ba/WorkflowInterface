@@ -147,4 +147,23 @@ export interface UserPreferences {
   currency: string;
   dateFormat: string;
   defaultView: 'grid' | 'list';
+  driveMonitoredFolderId?: string;
+  driveMonitoredFolderName?: string;
+}
+
+// Google Drive types
+export interface DriveFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  size?: number;
+  modifiedTime: Date;
+  webViewLink?: string;
+  thumbnailLink?: string;
+}
+
+export interface DriveFolder {
+  id: string;
+  name: string;
+  modifiedTime: Date;
 }
