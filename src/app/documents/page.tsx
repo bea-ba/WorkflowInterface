@@ -18,15 +18,21 @@ import {
 import { useApp } from '@/context/AppContext';
 import MainLayout from '@/components/layout/MainLayout';
 import { formatCurrency, formatDate, cn, getStatusColor } from '@/lib/utils';
-import { mockCategories } from '@/data/mockData';
+import { mockCategories, mockDocuments } from '@/data/mockData';
 import { DocumentStatus } from '@/types';
+import { useDocuments } from '@/hooks/useDocuments';
+import { isSupabaseConfigured } from '@/lib/supabase';
 
 type ViewMode = 'grid' | 'list';
 
 export default function DocumentsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isAuthenticated, documents } = useApp();
+  const { isAuthenticated, user } = useApp();
+
+  // Use real documents if Supabase is configured, otherwise use mock data
+  const { documents: realDocuments, loading } = useDocuments(user?.id);
+  const documents = isSupabaseConfigured() ? realDocuments : mockDocuments;
 
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [searchTerm, setSearchTerm] = useState('');
