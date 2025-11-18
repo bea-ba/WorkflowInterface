@@ -17,7 +17,7 @@ import {
 import { useApp } from '@/context/AppContext';
 import MainLayout from '@/components/layout/MainLayout';
 import { formatDate, cn } from '@/lib/utils';
-import { initiateOAuthFlow, storeTokens, getStoredTokens, clearTokens } from '@/services/integrations/googleOAuth';
+import { storeTokens, getStoredTokens, clearTokens } from '@/services/integrations/googleOAuth';
 
 function SettingsContent() {
   const router = useRouter();
@@ -87,9 +87,15 @@ function SettingsContent() {
 
     try {
       if (type === 'gmail') {
-        // Real OAuth flow for Gmail
-        const authUrl = await initiateOAuthFlow('gmail');
-        window.location.href = authUrl;
+        // Real OAuth flow for Gmail - call server-side API
+        const response = await fetch('/api/auth/google/initiate');
+        const data = await response.json();
+
+        if (data.authUrl) {
+          window.location.href = data.authUrl;
+        } else {
+          throw new Error(data.error || 'Failed to get authorization URL');
+        }
       } else {
         // Mock for Drive and Sheets (not implemented yet)
         await connectIntegration(type);
