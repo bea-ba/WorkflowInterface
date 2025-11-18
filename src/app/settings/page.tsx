@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Mail,
   HardDrive,
@@ -17,9 +17,11 @@ import {
 import { useApp } from '@/context/AppContext';
 import MainLayout from '@/components/layout/MainLayout';
 import { formatDate, cn } from '@/lib/utils';
+import { initiateOAuthFlow, storeTokens, getStoredTokens, clearTokens } from '@/services/integrations/googleOAuth';
 
 export default function SettingsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const {
     isAuthenticated,
     user,
@@ -33,6 +35,8 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<'integrations' | 'preferences' | 'account'>('integrations');
   const [connectingType, setConnectingType] = useState<string | null>(null);
   const [localPreferences, setLocalPreferences] = useState(preferences);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -44,23 +48,70 @@ export default function SettingsPage() {
     setLocalPreferences(preferences);
   }, [preferences]);
 
+  // Handle OAuth callback
+  useEffect(() => {
+    const gmailConnected = searchParams.get('gmail_connected');
+    const tokensParam = searchParams.get('tokens');
+    const error = searchParams.get('error');
+
+    if (error) {
+      setErrorMessage(`Connection failed: ${error}`);
+      // Clean up URL
+      router.replace('/settings');
+      return;
+    }
+
+    if (gmailConnected === 'true' && tokensParam) {
+      try {
+        const tokens = JSON.parse(decodeURIComponent(tokensParam));
+        storeTokens(tokens);
+        connectIntegration('gmail');
+        setSuccessMessage('Gmail connected successfully! You can now sync your bills.');
+        // Clean up URL
+        router.replace('/settings');
+      } catch (error) {
+        console.error('Error parsing tokens:', error);
+        setErrorMessage('Failed to connect Gmail');
+      }
+    }
+  }, [searchParams, connectIntegration, router]);
+
   if (!isAuthenticated) {
     return null;
   }
 
   const handleConnect = async (type: 'gmail' | 'drive' | 'sheets') => {
     setConnectingType(type);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
     try {
-      // MOCK: In real app, this would initiate OAuth flow
-      await connectIntegration(type);
+      if (type === 'gmail') {
+        // Real OAuth flow for Gmail
+        const authUrl = await initiateOAuthFlow('gmail');
+        window.location.href = authUrl;
+      } else {
+        // Mock for Drive and Sheets (not implemented yet)
+        await connectIntegration(type);
+        setSuccessMessage(`${type} connected successfully!`);
+      }
+    } catch (error) {
+      console.error(`Error connecting ${type}:`, error);
+      setErrorMessage(`Failed to connect ${type}`);
     } finally {
-      setConnectingType(null);
+      if (type !== 'gmail') {
+        setConnectingType(null);
+      }
     }
   };
 
   const handleDisconnect = (type: 'gmail' | 'drive' | 'sheets') => {
     if (confirm(`Are you sure you want to disconnect ${type}?`)) {
+      if (type === 'gmail') {
+        clearTokens();
+      }
       disconnectIntegration(type);
+      setSuccessMessage(`${type} disconnected`);
     }
   };
 
@@ -127,6 +178,32 @@ export default function SettingsPage() {
           {/* Integrations Tab */}
           {activeTab === 'integrations' && (
             <div className="p-6">
+              {/* Success/Error Messages */}
+              {successMessage && (
+                <div className="mb-4 p-4 bg-success-50 border border-success-200 rounded-lg flex items-center">
+                  <Check className="h-5 w-5 text-success-600 mr-2" />
+                  <p className="text-sm text-success-800">{successMessage}</p>
+                  <button
+                    onClick={() => setSuccessMessage(null)}
+                    className="ml-auto text-success-600 hover:text-success-800"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+              {errorMessage && (
+                <div className="mb-4 p-4 bg-danger-50 border border-danger-200 rounded-lg flex items-center">
+                  <X className="h-5 w-5 text-danger-600 mr-2" />
+                  <p className="text-sm text-danger-800">{errorMessage}</p>
+                  <button
+                    onClick={() => setErrorMessage(null)}
+                    className="ml-auto text-danger-600 hover:text-danger-800"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
                 Connected Integrations
               </h2>
@@ -286,16 +363,12 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* MOCK Note */}
+              {/* Implementation Note */}
               <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-sm text-blue-800">
-                  <strong>Mock Integration:</strong> In production, clicking "Connect" would:
-                  <ul className="mt-2 ml-5 list-disc space-y-1">
-                    <li>Initiate Google OAuth 2.0 flow</li>
-                    <li>Request necessary permissions (read emails, access drive, edit sheets)</li>
-                    <li>Store encrypted access tokens in Supabase</li>
-                    <li>Set up webhooks for real-time notifications</li>
-                  </ul>
+                  <strong>Gmail Integration:</strong> Fully functional! Connect your Gmail to search for bills from electricity, water, and internet providers.
+                  <br />
+                  <strong>Drive & Sheets:</strong> Coming soon (currently mocked).
                 </p>
               </div>
             </div>
