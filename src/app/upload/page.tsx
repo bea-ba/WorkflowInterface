@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useDropzone } from 'react-dropzone';
 import {
   Upload as UploadIcon,
-  File,
   X,
   CheckCircle,
   AlertCircle,
@@ -16,6 +15,7 @@ import {
 import { useApp } from '@/context/AppContext';
 import MainLayout from '@/components/layout/MainLayout';
 import { formatFileSize, cn } from '@/lib/utils';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 interface UploadFile {
   id: string;
@@ -23,11 +23,12 @@ interface UploadFile {
   status: 'pending' | 'uploading' | 'processing' | 'complete' | 'error';
   progress: number;
   error?: string;
+  documentId?: string;
 }
 
 export default function UploadPage() {
   const router = useRouter();
-  const { isAuthenticated, addDocument } = useApp();
+  const { isAuthenticated, user } = useApp();
   const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
 
   useEffect(() => {
@@ -36,57 +37,187 @@ export default function UploadPage() {
     }
   }, [isAuthenticated, router]);
 
-  // Simulate file processing
-  const processFile = async (fileId: string) => {
-    // Update to uploading
-    setUploadFiles(prev =>
-      prev.map(f => f.id === fileId ? { ...f, status: 'uploading' as const, progress: 0 } : f)
-    );
-
-    // Simulate upload progress
-    for (let progress = 0; progress <= 100; progress += 20) {
-      await new Promise(resolve => setTimeout(resolve, 300));
+  // Real file upload and processing
+  const processFile = async (fileId: string, file: File) => {
+    if (!user?.id) {
       setUploadFiles(prev =>
-        prev.map(f => f.id === fileId ? { ...f, progress } : f)
+        prev.map(f =>
+          f.id === fileId ? { ...f, status: 'error', error: 'User not authenticated' } : f
+        )
       );
+      return;
     }
 
-    // Update to processing
-    setUploadFiles(prev =>
-      prev.map(f => f.id === fileId ? { ...f, status: 'processing' as const } : f)
-    );
+    // Check if Supabase is configured
+    if (!isSupabaseConfigured()) {
+      setUploadFiles(prev =>
+        prev.map(f =>
+          f.id === fileId
+            ? {
+                ...f,
+                status: 'error',
+                error: 'Supabase not configured. Please set up environment variables.',
+              }
+            : f
+        )
+      );
+      return;
+    }
 
-    // Simulate AI processing
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    try {
+      // Update to uploading
+      setUploadFiles(prev =>
+        prev.map(f => (f.id === fileId ? { ...f, status: 'uploading', progress: 20 } : f))
+      );
 
-    // MOCK: In real app, this would call OCR/AI extraction API
-    // For now, just mark as complete
-    setUploadFiles(prev =>
-      prev.map(f => f.id === fileId ? { ...f, status: 'complete' as const, progress: 100 } : f)
-    );
+      // Create FormData
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('userId', user.id);
+
+      // Upload to API
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Upload failed');
+      }
+
+      const data = await response.json();
+
+      // Update to processing
+      setUploadFiles(prev =>
+        prev.map(f =>
+          f.id === fileId
+            ? {
+                ...f,
+                status: 'processing',
+                progress: 50,
+                documentId: data.document.id,
+              }
+            : f
+        )
+      );
+
+      // Poll for completion (Supabase real-time will update the document)
+      await pollForCompletion(fileId, data.document.id);
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      setUploadFiles(prev =>
+        prev.map(f =>
+          f.id === fileId
+            ? {
+                ...f,
+                status: 'error',
+                error: error.message || 'Upload failed',
+              }
+            : f
+        )
+      );
+    }
   };
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const newFiles: UploadFile[] = acceptedFiles.map(file => ({
-      id: `file_${Date.now()}_${Math.random()}`,
-      file,
-      status: 'pending',
-      progress: 0,
-    }));
+  // Poll for document processing completion
+  const pollForCompletion = async (fileId: string, documentId: string) => {
+    const maxAttempts = 60; // 60 seconds max
+    let attempts = 0;
 
-    setUploadFiles(prev => [...prev, ...newFiles]);
+    const checkStatus = async () => {
+      attempts++;
 
-    // Start processing each file
-    newFiles.forEach(f => processFile(f.id));
-  }, []);
+      try {
+        const { data: document, error } = await supabase
+          .from('documents')
+          .select('status')
+          .eq('id', documentId)
+          .single();
+
+        if (error) throw error;
+
+        if (document?.status === 'complete' || document?.status === 'review') {
+          // Success!
+          setUploadFiles(prev =>
+            prev.map(f =>
+              f.id === fileId ? { ...f, status: 'complete', progress: 100 } : f
+            )
+          );
+          return true;
+        } else if (document?.status === 'failed') {
+          // Failed
+          setUploadFiles(prev =>
+            prev.map(f =>
+              f.id === fileId
+                ? { ...f, status: 'error', error: 'Processing failed' }
+                : f
+            )
+          );
+          return true;
+        } else if (attempts >= maxAttempts) {
+          // Timeout
+          setUploadFiles(prev =>
+            prev.map(f =>
+              f.id === fileId
+                ? {
+                    ...f,
+                    status: 'error',
+                    error: 'Processing timeout. Check document status later.',
+                  }
+                : f
+            )
+          );
+          return true;
+        }
+
+        // Still processing, check again
+        return false;
+      } catch (error) {
+        console.error('Polling error:', error);
+        return false;
+      }
+    };
+
+    // Poll every second
+    const interval = setInterval(async () => {
+      const done = await checkStatus();
+      if (done) {
+        clearInterval(interval);
+      }
+    }, 1000);
+  };
+
+  const onDrop = useCallback(
+    (acceptedFiles: File[]) => {
+      // For MVP, only handle one file at a time
+      const file = acceptedFiles[0];
+      if (!file) return;
+
+      const fileId = `file_${Date.now()}_${Math.random()}`;
+
+      const newFile: UploadFile = {
+        id: fileId,
+        file,
+        status: 'pending',
+        progress: 0,
+      };
+
+      setUploadFiles(prev => [...prev, newFile]);
+
+      // Start processing
+      processFile(fileId, file);
+    },
+    [user]
+  );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
       'application/pdf': ['.pdf'],
-      'image/*': ['.png', '.jpg', '.jpeg', '.heic', '.tiff'],
     },
     maxSize: 20 * 1024 * 1024, // 20MB
+    maxFiles: 1, // Single file for MVP
   });
 
   const removeFile = (fileId: string) => {
@@ -98,7 +229,9 @@ export default function UploadPage() {
   };
 
   const completedCount = uploadFiles.filter(f => f.status === 'complete').length;
-  const processingCount = uploadFiles.filter(f => ['uploading', 'processing'].includes(f.status)).length;
+  const processingCount = uploadFiles.filter(f =>
+    ['uploading', 'processing'].includes(f.status)
+  ).length;
 
   if (!isAuthenticated) {
     return null;
@@ -109,11 +242,29 @@ export default function UploadPage() {
       <div className="px-4 sm:px-6 lg:px-8 py-8">
         {/* Page Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Upload Documents</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Upload Document</h1>
           <p className="mt-2 text-sm text-gray-700">
-            Upload bills, receipts, or invoices to extract and organize your financial data.
+            Upload an electricity bill PDF to extract and organize your financial data.
           </p>
         </div>
+
+        {/* Configuration Warning */}
+        {!isSupabaseConfigured() && (
+          <div className="mb-6 bg-warning-50 border border-warning-200 rounded-lg p-4">
+            <div className="flex items-start">
+              <AlertCircle className="h-5 w-5 text-warning-600 mr-3 flex-shrink-0" />
+              <div>
+                <h3 className="text-sm font-medium text-warning-800">
+                  Supabase Not Configured
+                </h3>
+                <p className="mt-1 text-sm text-warning-700">
+                  Please set up your environment variables (.env.local) with Supabase and OpenAI
+                  credentials to enable real file uploads. See the README.md for instructions.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Stats */}
         {uploadFiles.length > 0 && (
@@ -147,30 +298,20 @@ export default function UploadPage() {
             <input {...getInputProps()} />
             <UploadIcon className="mx-auto h-12 w-12 text-gray-400 mb-4" />
             {isDragActive ? (
-              <p className="text-lg font-medium text-primary-600">Drop files here...</p>
+              <p className="text-lg font-medium text-primary-600">Drop PDF here...</p>
             ) : (
               <>
                 <p className="text-lg font-medium text-gray-900 mb-2">
-                  Drop files here or click to browse
+                  Drop PDF here or click to browse
                 </p>
                 <p className="text-sm text-gray-600">
-                  Supports PDF, JPG, PNG, HEIC, TIFF (max 20MB per file)
+                  Supports PDF files only (max 20MB)
+                </p>
+                <p className="text-xs text-gray-500 mt-2">
+                  Currently: Single electricity bill PDF
                 </p>
               </>
             )}
-          </div>
-
-          {/* MOCK Integration Note */}
-          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-sm text-blue-800">
-              <strong>Note:</strong> This is a mock upload interface. In production, files would be:
-              <ul className="mt-2 ml-5 list-disc space-y-1">
-                <li>Uploaded to Supabase Storage</li>
-                <li>Processed with Google Vision API for OCR</li>
-                <li>Analyzed with OpenAI GPT-4 for entity extraction</li>
-                <li>Saved to Supabase database with extracted data</li>
-              </ul>
-            </p>
           </div>
         </div>
 
@@ -191,7 +332,7 @@ export default function UploadPage() {
               )}
             </div>
             <ul className="divide-y divide-gray-200">
-              {uploadFiles.map((uploadFile) => (
+              {uploadFiles.map(uploadFile => (
                 <li key={uploadFile.id} className="px-6 py-4">
                   <div className="flex items-center space-x-4">
                     {/* Icon */}
@@ -222,9 +363,16 @@ export default function UploadPage() {
                             />
                           </div>
                           <p className="mt-1 text-xs text-gray-600">
-                            {uploadFile.status === 'uploading' ? 'Uploading...' : 'Processing with AI...'}
+                            {uploadFile.status === 'uploading'
+                              ? 'Uploading...'
+                              : 'Processing with AI...'}
                           </p>
                         </div>
+                      )}
+
+                      {/* Error Message */}
+                      {uploadFile.status === 'error' && uploadFile.error && (
+                        <p className="mt-1 text-xs text-danger-600">{uploadFile.error}</p>
                       )}
                     </div>
 
