@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Mail,
@@ -19,7 +19,7 @@ import MainLayout from '@/components/layout/MainLayout';
 import { formatDate, cn } from '@/lib/utils';
 import { initiateOAuthFlow, storeTokens, getStoredTokens, clearTokens } from '@/services/integrations/googleOAuth';
 
-export default function SettingsPage() {
+function SettingsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const {
@@ -550,5 +550,13 @@ export default function SettingsPage() {
         </div>
       </div>
     </MainLayout>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="p-8">Loading...</div>}>
+      <SettingsContent />
+    </Suspense>
   );
 }
