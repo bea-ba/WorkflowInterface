@@ -18,20 +18,24 @@ import {
   Tag,
   Building,
   CreditCard,
+  Sheet,
+  Loader2,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import MainLayout from '@/components/layout/MainLayout';
 import { formatCurrency, formatDate, cn, getStatusColor, getConfidenceBadgeColor } from '@/lib/utils';
 import { mockCategories } from '@/data/mockData';
+import { writeDocumentToSheet } from '@/services/integrations/sheetWriter';
 
 export default function DocumentViewPage() {
   const router = useRouter();
   const params = useParams();
-  const { isAuthenticated, documents, updateDocument, deleteDocument } = useApp();
+  const { isAuthenticated, user, documents, updateDocument, deleteDocument, preferences, integrations } = useApp();
 
   const [zoom, setZoom] = useState(100);
   const [isEditing, setIsEditing] = useState(false);
   const [editedData, setEditedData] = useState<any>(null);
+  const [exportingToSheets, setExportingToSheets] = useState(false);
 
   const documentId = params.id as string;
   const document = documents.find(d => d.id === documentId);
@@ -74,7 +78,27 @@ export default function DocumentViewPage() {
     }
   };
 
+  const handleExportToSheets = async () => {
+    if (!preferences.googleSheetsId || !user?.id) {
+      alert('Please configure Google Sheets integration in Settings first.');
+      return;
+    }
+
+    setExportingToSheets(true);
+    try {
+      await writeDocumentToSheet(preferences.googleSheetsId, document, user.id);
+      alert('Document exported to Google Sheets successfully!');
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('Failed to export document. Please try again.');
+    } finally {
+      setExportingToSheets(false);
+    }
+  };
+
   const confidenceScore = document.confidenceScore * 100;
+  const sheetsConnected = integrations.find(i => i.type === 'sheets')?.connected;
+  const canExportToSheets = sheetsConnected && preferences.googleSheetsId;
 
   return (
     <MainLayout>
@@ -98,6 +122,20 @@ export default function DocumentViewPage() {
             </div>
 
             <div className="mt-4 sm:mt-0 flex items-center space-x-2">
+              {canExportToSheets && (
+                <button
+                  onClick={handleExportToSheets}
+                  disabled={exportingToSheets}
+                  className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-primary-700 bg-white hover:bg-primary-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {exportingToSheets ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Sheet className="h-4 w-4 mr-2" />
+                  )}
+                  Export to Sheets
+                </button>
+              )}
               <button className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
                 <Download className="h-4 w-4 mr-2" />
                 Download
