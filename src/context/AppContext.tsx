@@ -200,9 +200,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
 
       // Add all new documents to state, filtering out duplicates based on sourceReference (messageId)
+      let addedCount = 0;
       setDocuments(prev => {
         const existingRefs = new Set(prev.map(d => d.sourceReference));
         const uniqueNewDocs = newDocuments.filter(d => !existingRefs.has(d.sourceReference));
+        addedCount = uniqueNewDocs.length;
         return [...uniqueNewDocs, ...prev];
       });
 
@@ -215,7 +217,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         )
       );
 
-      return { success: true, count: newDocuments.length };
+      return { success: true, count: addedCount };
     } catch (error) {
       console.error('Error syncing Gmail bills:', error);
       return {
