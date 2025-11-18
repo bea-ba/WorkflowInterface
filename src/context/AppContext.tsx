@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, Document, Integration, Notification, UserPreferences, DriveFile } from '@/types';
 import {
   mockUser,
@@ -239,6 +239,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
       console.error('Error syncing Drive files:', error);
     }
   };
+
+  // Auto-sync Drive files every 5 minutes when Drive is connected and folder is selected
+  useEffect(() => {
+    const driveIntegration = integrations.find(i => i.type === 'drive');
+    const isDriveReady = driveIntegration?.connected && preferences.driveMonitoredFolderId;
+
+    if (!isDriveReady || !isAuthenticated) {
+      return;
+    }
+
+    // Initial sync
+    syncDriveFiles();
+
+    // Set up polling interval (5 minutes)
+    const interval = setInterval(() => {
+      syncDriveFiles();
+    }, 5 * 60 * 1000); // 5 minutes
+
+    return () => clearInterval(interval);
+  }, [integrations, preferences.driveMonitoredFolderId, isAuthenticated]);
 
   const value: AppContextType = {
     user,
