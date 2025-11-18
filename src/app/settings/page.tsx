@@ -31,6 +31,7 @@ export default function SettingsPage() {
     disconnectIntegration,
     preferences,
     updatePreferences,
+    syncDriveFiles,
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'integrations' | 'preferences' | 'account'>('integrations');
@@ -39,6 +40,7 @@ export default function SettingsPage() {
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [availableFolders, setAvailableFolders] = useState<DriveFolder[]>([]);
   const [loadingFolders, setLoadingFolders] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -101,6 +103,19 @@ export default function SettingsPage() {
     });
     setShowFolderModal(false);
     alert(`Folder "${folder.name}" selected successfully!`);
+  };
+
+  const handleSyncNow = async () => {
+    setSyncing(true);
+    try {
+      await syncDriveFiles();
+      alert('Drive files synced successfully!');
+    } catch (error) {
+      console.error('Sync error:', error);
+      alert('Failed to sync Drive files. Please try again.');
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const gmail = integrations.find(i => i.type === 'gmail');
@@ -248,6 +263,22 @@ export default function SettingsPage() {
                     <div className="flex items-center space-x-2">
                       {drive?.connected ? (
                         <>
+                          {localPreferences.driveMonitoredFolderId && (
+                            <button
+                              onClick={handleSyncNow}
+                              disabled={syncing}
+                              className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {syncing ? (
+                                <>
+                                  <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                                  Syncing...
+                                </>
+                              ) : (
+                                'Sync Now'
+                              )}
+                            </button>
+                          )}
                           <button
                             onClick={handleSelectFolder}
                             className="px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-50 rounded-md transition-colors"
