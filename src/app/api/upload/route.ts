@@ -4,14 +4,8 @@ import { getSupabaseAdmin } from '@/lib/supabase';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Increase body size limit for file uploads
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '20mb',
-    },
-  },
-};
+// Note: Next.js App Router handles multipart/form-data automatically via request.formData()
+// The default body size limits are sufficient for PDF uploads up to 20MB
 
 export async function POST(request: NextRequest) {
   try {
