@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { User, Document, Integration, Notification, UserPreferences, DriveFile } from '@/types';
 import {
   mockUser,
@@ -144,7 +144,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   // Drive sync methods
-  const convertDriveFileToDocument = (driveFile: DriveFile): Document => {
+  const convertDriveFileToDocument = useCallback((driveFile: DriveFile): Document => {
     // Create a mock document from Drive file
     // In production, this would trigger OCR and extraction
     return {
@@ -189,9 +189,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-  };
+  }, [user, preferences]);
 
-  const syncDriveFiles = async () => {
+  const syncDriveFiles = useCallback(async () => {
     const driveIntegration = integrations.find(i => i.type === 'drive');
 
     if (!driveIntegration?.connected) {
@@ -238,7 +238,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Error syncing Drive files:', error);
     }
-  };
+  }, [integrations, preferences, documents, convertDriveFileToDocument]);
 
   // Auto-sync Drive files every 5 minutes when Drive is connected and folder is selected
   useEffect(() => {
@@ -258,7 +258,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }, 5 * 60 * 1000); // 5 minutes
 
     return () => clearInterval(interval);
-  }, [integrations, preferences.driveMonitoredFolderId, isAuthenticated]);
+  }, [integrations, preferences.driveMonitoredFolderId, isAuthenticated, syncDriveFiles]);
 
   const value: AppContextType = {
     user,
