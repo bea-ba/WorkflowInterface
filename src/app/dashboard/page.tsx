@@ -42,8 +42,10 @@ export default function DashboardPage() {
   const budgetPercentage = (metrics.currentMonthSpending / metrics.budgetComparison) * 100;
   const isOverBudget = budgetPercentage > 100;
 
-  // Get recent documents (last 5)
-  const recentDocuments = mockDocuments.slice(0, 5);
+  // Get recent documents (last 5) - use context documents if available, else mock
+  const recentDocuments = documents.length > 0
+    ? documents.slice(0, 5)
+    : mockDocuments.slice(0, 5);
 
   // Documents needing review
   const reviewDocuments = documents.filter(d => d.status === 'review');
