@@ -199,8 +199,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         };
       });
 
-      // Add all new documents to state
-      setDocuments(prev => [...newDocuments, ...prev]);
+      // Add all new documents to state, filtering out duplicates based on sourceReference (messageId)
+      setDocuments(prev => {
+        const existingRefs = new Set(prev.map(d => d.sourceReference));
+        const uniqueNewDocs = newDocuments.filter(d => !existingRefs.has(d.sourceReference));
+        return [...uniqueNewDocs, ...prev];
+      });
 
       // Update Gmail integration last sync
       setIntegrations(prev =>
