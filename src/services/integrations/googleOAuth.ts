@@ -1,23 +1,17 @@
 /**
  * Google OAuth Integration Module
  *
- * PLACEHOLDER - Not implemented in MVP
+ * Handles Google OAuth 2.0 authentication flow for Gmail integration.
+ * Tokens are stored in localStorage (MVP) - in production, use encrypted database storage.
  *
- * In production, this module would handle:
- * - Google OAuth 2.0 authentication flow
- * - Token management (access tokens, refresh tokens)
- * - Token encryption and secure storage in Supabase
- * - Automatic token refresh when expired
- *
- * Required packages:
- * - googleapis
- * - @google-cloud/local-auth
- *
+ * Required packages: googleapis
  * Required environment variables:
  * - GOOGLE_CLIENT_ID
  * - GOOGLE_CLIENT_SECRET
- * - GOOGLE_REDIRECT_URI
+ * - NEXT_PUBLIC_GOOGLE_REDIRECT_URI
  */
+
+import { google } from 'googleapis';
 
 export interface GoogleOAuthConfig {
   clientId: string;
@@ -29,7 +23,7 @@ export interface GoogleOAuthConfig {
 export interface GoogleTokens {
   accessToken: string;
   refreshToken: string;
-  expiresAt: Date;
+  expiryDate: number;
 }
 
 /**
@@ -38,87 +32,116 @@ export interface GoogleTokens {
  * @returns Authorization URL to redirect user to
  */
 export async function initiateOAuthFlow(
-  service: 'gmail' | 'drive' | 'sheets'
+  service: 'gmail' | 'drive' | 'sheets' = 'gmail'
 ): Promise<string> {
-  // PRODUCTION IMPLEMENTATION:
-  // const oauth2Client = new google.auth.OAuth2(
-  //   process.env.GOOGLE_CLIENT_ID,
-  //   process.env.GOOGLE_CLIENT_SECRET,
-  //   process.env.GOOGLE_REDIRECT_URI
-  // );
-  //
-  // const scopes = getRequiredScopes(service);
-  // const authUrl = oauth2Client.generateAuthUrl({
-  //   access_type: 'offline',
-  //   scope: scopes,
-  //   state: JSON.stringify({ service, userId: currentUser.id })
-  // });
-  //
-  // return authUrl;
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI
+  );
 
-  // MOCK: Return a placeholder URL
-  return `https://accounts.google.com/o/oauth2/v2/auth?mock=true&service=${service}`;
+  const scopes = getRequiredScopes(service);
+  const authUrl = oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    scope: scopes,
+    prompt: 'consent', // Force consent to ensure we get refresh token
+  });
+
+  return authUrl;
 }
 
 /**
- * Handles the OAuth callback after user authorization
- * @param code - Authorization code from Google
- * @param userId - Current user ID
+ * Store tokens in localStorage (MVP only - use encrypted DB in production)
  */
-export async function handleOAuthCallback(
-  code: string,
-  userId: string
-): Promise<GoogleTokens> {
-  // PRODUCTION IMPLEMENTATION:
-  // const oauth2Client = new google.auth.OAuth2(...);
-  // const { tokens } = await oauth2Client.getToken(code);
-  //
-  // // Encrypt tokens before storing
-  // const encryptedTokens = await encryptTokens(tokens);
-  //
-  // // Store in Supabase
-  // await supabase
-  //   .from('user_integrations')
-  //   .upsert({
-  //     user_id: userId,
-  //     service: 'gmail', // or drive, sheets
-  //     access_token: encryptedTokens.accessToken,
-  //     refresh_token: encryptedTokens.refreshToken,
-  //     expires_at: tokens.expiry_date
-  //   });
-  //
-  // return tokens;
-
-  // MOCK: Return fake tokens
-  return {
-    accessToken: 'mock_access_token',
-    refreshToken: 'mock_refresh_token',
-    expiresAt: new Date(Date.now() + 3600 * 1000),
-  };
+export function storeTokens(tokens: GoogleTokens): void {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('gmail_tokens', JSON.stringify(tokens));
+  }
 }
 
 /**
- * Refreshes an expired access token
- * @param userId - User ID to refresh tokens for
+ * Retrieve tokens from localStorage
  */
-export async function refreshAccessToken(userId: string): Promise<string> {
-  // PRODUCTION IMPLEMENTATION:
-  // const { data } = await supabase
-  //   .from('user_integrations')
-  //   .select('refresh_token')
-  //   .eq('user_id', userId)
-  //   .single();
-  //
-  // const oauth2Client = new google.auth.OAuth2(...);
-  // oauth2Client.setCredentials({
-  //   refresh_token: decryptToken(data.refresh_token)
-  // });
-  //
-  // const { credentials } = await oauth2Client.refreshAccessToken();
-  // return credentials.access_token;
+export function getStoredTokens(): GoogleTokens | null {
+  if (typeof window === 'undefined') return null;
 
-  // MOCK
-  return 'mock_refreshed_token';
+  const stored = localStorage.getItem('gmail_tokens');
+  if (!stored) return null;
+
+  try {
+    return JSON.parse(stored);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Clear stored tokens
+ */
+export function clearTokens(): void {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('gmail_tokens');
+  }
+}
+
+/**
+ * Refreshes an expired access token using refresh token
+ */
+export async function refreshAccessToken(): Promise<string> {
+  const tokens = getStoredTokens();
+  if (!tokens?.refreshToken) {
+    throw new Error('No refresh token available');
+  }
+
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI
+  );
+
+  oauth2Client.setCredentials({
+    refresh_token: tokens.refreshToken,
+  });
+
+  const { credentials } = await oauth2Client.refreshAccessToken();
+
+  if (credentials.access_token) {
+    // Update stored tokens
+    const updatedTokens: GoogleTokens = {
+      ...tokens,
+      accessToken: credentials.access_token,
+      expiryDate: credentials.expiry_date || Date.now() + 3600 * 1000,
+    };
+    storeTokens(updatedTokens);
+
+    return credentials.access_token;
+  }
+
+  throw new Error('Failed to refresh access token');
+}
+
+/**
+ * Get authenticated OAuth2 client
+ */
+export function getAuthClient(): any {
+  const tokens = getStoredTokens();
+  if (!tokens) {
+    throw new Error('No tokens available - user not authenticated');
+  }
+
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI
+  );
+
+  oauth2Client.setCredentials({
+    access_token: tokens.accessToken,
+    refresh_token: tokens.refreshToken,
+    expiry_date: tokens.expiryDate,
+  });
+
+  return oauth2Client;
 }
 
 /**
@@ -144,6 +167,9 @@ function getRequiredScopes(service: 'gmail' | 'drive' | 'sheets'): string[] {
 
 export default {
   initiateOAuthFlow,
-  handleOAuthCallback,
   refreshAccessToken,
+  getAuthClient,
+  storeTokens,
+  getStoredTokens,
+  clearTokens,
 };
