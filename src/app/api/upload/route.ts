@@ -4,15 +4,6 @@ import { getSupabaseAdmin } from '@/lib/supabase';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Increase body size limit for file uploads
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '20mb',
-    },
-  },
-};
-
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
