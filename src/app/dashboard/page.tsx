@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -11,6 +11,10 @@ import {
   AlertCircle,
   Calendar,
   ArrowRight,
+  RefreshCw,
+  Mail,
+  Check,
+  X,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import MainLayout from '@/components/layout/MainLayout';
@@ -23,10 +27,13 @@ import {
   mockDocuments,
 } from '@/data/mockData';
 import { formatCurrency, formatDate, cn } from '@/lib/utils';
+import { getStoredTokens } from '@/services/integrations/googleOAuth';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { isAuthenticated, documents } = useApp();
+  const { isAuthenticated, documents, integrations, syncGmailBills } = useApp();
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -48,16 +55,104 @@ export default function DashboardPage() {
   // Documents needing review
   const reviewDocuments = documents.filter(d => d.status === 'review');
 
+  // Check if Gmail is connected
+  const gmailIntegration = integrations.find(i => i.type === 'gmail');
+  const isGmailConnected = gmailIntegration?.connected && getStoredTokens() !== null;
+
+  const handleGmailSync = async () => {
+    setIsSyncing(true);
+    setSyncMessage(null);
+
+    try {
+      const result = await syncGmailBills(3); // Search last 3 months
+
+      if (result.success) {
+        setSyncMessage({
+          type: 'success',
+          text: `Found ${result.count} bill${result.count !== 1 ? 's' : ''} from Gmail`
+        });
+      } else {
+        setSyncMessage({
+          type: 'error',
+          text: result.error || 'Failed to sync Gmail'
+        });
+      }
+    } catch (error) {
+      setSyncMessage({
+        type: 'error',
+        text: 'An error occurred while syncing'
+      });
+    } finally {
+      setIsSyncing(false);
+      // Auto-dismiss success message after 5 seconds
+      setTimeout(() => setSyncMessage(null), 5000);
+    }
+  };
+
   return (
     <MainLayout>
       <div className="px-4 sm:px-6 lg:px-8 py-8">
         {/* Page Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-          <p className="mt-2 text-sm text-gray-700">
-            Welcome back! Here's an overview of your financial documents.
-          </p>
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+            <p className="mt-2 text-sm text-gray-700">
+              Welcome back! Here's an overview of your financial documents.
+            </p>
+          </div>
+
+          {/* Gmail Sync Button */}
+          {isGmailConnected && (
+            <button
+              onClick={handleGmailSync}
+              disabled={isSyncing}
+              className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isSyncing ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Syncing...
+                </>
+              ) : (
+                <>
+                  <Mail className="h-4 w-4 mr-2" />
+                  Sync Gmail
+                </>
+              )}
+            </button>
+          )}
         </div>
+
+        {/* Sync Status Message */}
+        {syncMessage && (
+          <div className={cn(
+            "mb-6 p-4 rounded-lg border flex items-center",
+            syncMessage.type === 'success'
+              ? "bg-success-50 border-success-200"
+              : "bg-danger-50 border-danger-200"
+          )}>
+            {syncMessage.type === 'success' ? (
+              <Check className="h-5 w-5 text-success-600 mr-2" />
+            ) : (
+              <X className="h-5 w-5 text-danger-600 mr-2" />
+            )}
+            <p className={cn(
+              "text-sm",
+              syncMessage.type === 'success' ? "text-success-800" : "text-danger-800"
+            )}>
+              {syncMessage.text}
+            </p>
+            <button
+              onClick={() => setSyncMessage(null)}
+              className={cn(
+                "ml-auto",
+                syncMessage.type === 'success' ? "text-success-600" : "text-danger-600"
+              )}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
 
         {/* Review Alert */}
         {reviewDocuments.length > 0 && (
