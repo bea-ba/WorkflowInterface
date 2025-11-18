@@ -50,6 +50,8 @@ const defaultPreferences: UserPreferences = {
   currency: 'USD',
   dateFormat: 'MM/DD/YYYY',
   defaultView: 'grid',
+  googleSheetsId: undefined,
+  autoSyncToSheets: true,
 };
 
 export function AppProvider({ children }: { children: ReactNode }) {

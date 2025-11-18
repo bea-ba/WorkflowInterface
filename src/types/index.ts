@@ -147,4 +147,6 @@ export interface UserPreferences {
   currency: string;
   dateFormat: string;
   defaultView: 'grid' | 'list';
+  googleSheetsId?: string;
+  autoSyncToSheets: boolean;
 }

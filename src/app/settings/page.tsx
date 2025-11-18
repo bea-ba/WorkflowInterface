@@ -38,7 +38,7 @@ export default function SettingsPage() {
 
   // Sheets configuration
   const [availableSheets, setAvailableSheets] = useState<any[]>([]);
-  const [selectedSheetId, setSelectedSheetId] = useState<string>('');
+  const [selectedSheetId, setSelectedSheetId] = useState<string>(preferences.googleSheetsId || '');
   const [loadingSheets, setLoadingSheets] = useState(false);
   const [initializingSheet, setInitializingSheet] = useState(false);
 
@@ -98,12 +98,22 @@ export default function SettingsPage() {
     setInitializingSheet(true);
     try {
       await initializeSpreadsheet(selectedSheetId, user.id);
+      // Save sheet ID to preferences
+      updatePreferences({ googleSheetsId: selectedSheetId });
       alert('Spreadsheet initialized successfully! All category tabs and headers have been set up.');
     } catch (error) {
       console.error('Error initializing spreadsheet:', error);
       alert('Failed to initialize spreadsheet. Please try again.');
     } finally {
       setInitializingSheet(false);
+    }
+  };
+
+  const handleSheetSelection = (sheetId: string) => {
+    setSelectedSheetId(sheetId);
+    if (sheetId) {
+      // Save to preferences immediately
+      updatePreferences({ googleSheetsId: sheetId });
     }
   };
 
@@ -343,7 +353,7 @@ export default function SettingsPage() {
                         <div className="flex items-center space-x-2">
                           <select
                             value={selectedSheetId}
-                            onChange={(e) => setSelectedSheetId(e.target.value)}
+                            onChange={(e) => handleSheetSelection(e.target.value)}
                             disabled={loadingSheets}
                             className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 text-sm disabled:bg-gray-50 disabled:text-gray-500"
                           >
