@@ -52,6 +52,22 @@ export default function SettingsPage() {
     setLocalPreferences(preferences);
   }, [preferences]);
 
+  // Callback functions before conditional return
+  const loadUserSpreadsheets = useCallback(async () => {
+    if (!user?.id) return;
+
+    setLoadingSheets(true);
+    try {
+      const spreadsheets = await listUserSpreadsheets(user.id);
+      setAvailableSheets(spreadsheets);
+    } catch (error) {
+      console.error('Error loading spreadsheets:', error);
+      alert('Failed to load spreadsheets. Please try again.');
+    } finally {
+      setLoadingSheets(false);
+    }
+  }, [user?.id]);
+
   // Load spreadsheets when Sheets gets connected
   useEffect(() => {
     const sheetsIntegration = integrations.find(i => i.type === 'sheets');
@@ -84,21 +100,6 @@ export default function SettingsPage() {
     updatePreferences(localPreferences);
     alert('Preferences saved successfully!');
   };
-
-  const loadUserSpreadsheets = useCallback(async () => {
-    if (!user?.id) return;
-
-    setLoadingSheets(true);
-    try {
-      const spreadsheets = await listUserSpreadsheets(user.id);
-      setAvailableSheets(spreadsheets);
-    } catch (error) {
-      console.error('Error loading spreadsheets:', error);
-      alert('Failed to load spreadsheets. Please try again.');
-    } finally {
-      setLoadingSheets(false);
-    }
-  }, [user?.id]);
 
   const handleInitializeSheet = async () => {
     if (!selectedSheetId || !user?.id) return;
