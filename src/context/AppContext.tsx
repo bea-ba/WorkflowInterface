@@ -27,6 +27,7 @@ interface AppContextType {
   integrations: Integration[];
   connectIntegration: (type: 'gmail' | 'drive' | 'sheets') => Promise<void>;
   disconnectIntegration: (type: 'gmail' | 'drive' | 'sheets') => void;
+  syncGmailBills: (monthsBack?: number) => Promise<{ success: boolean; count: number; error?: string }>;
 
   // Notifications
   notifications: Notification[];
@@ -141,6 +142,86 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPreferences(prev => ({ ...prev, ...updates }));
   };
 
+  // Gmail sync method
+  const syncGmailBills = async (monthsBack: number = 3): Promise<{ success: boolean; count: number; error?: string }> => {
+    try {
+      // Dynamic import to avoid issues with server-side rendering
+      const { searchForBills } = await import('@/services/integrations/gmailMonitor');
+
+      const billFiles = await searchForBills(monthsBack);
+
+      // Convert BillFile objects to Document objects
+      const newDocuments: Document[] = billFiles.map((bill) => {
+        const docId = `gmail_${bill.messageId}_${Date.now()}`;
+
+        return {
+          id: docId,
+          organizationId: user?.organizationId || 'org_1',
+          uploadedBy: user?.id || 'user_1',
+          sourceType: 'gmail' as const,
+          sourceReference: bill.messageId,
+          vendorName: bill.from.split('<')[0].trim() || 'Unknown Vendor',
+          vendorNormalized: bill.from.toLowerCase(),
+          totalAmount: 0, // No extraction yet - just getting files
+          currency: 'USD',
+          documentDate: bill.date,
+          dueDate: undefined,
+          category: bill.category,
+          documentType: 'bill' as const,
+          tags: [bill.category],
+          extractionData: {
+            vendor: {
+              name: bill.from.split('<')[0].trim() || 'Unknown Vendor',
+              normalizedId: bill.from.toLowerCase(),
+            },
+            amounts: {
+              subtotal: 0,
+              tax: 0,
+              total: 0,
+              currency: 'USD',
+            },
+            dates: {
+              issued: bill.date,
+            },
+            category: bill.category,
+            documentType: 'bill' as const,
+            confidenceScores: {
+              overall: 0,
+              perField: {},
+            },
+          },
+          confidenceScore: 0,
+          status: 'pending' as const,
+          fileUrl: `data:${bill.mimeType};base64,${bill.data}`,
+          thumbnailUrl: '',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+      });
+
+      // Add all new documents to state
+      setDocuments(prev => [...newDocuments, ...prev]);
+
+      // Update Gmail integration last sync
+      setIntegrations(prev =>
+        prev.map(int =>
+          int.type === 'gmail'
+            ? { ...int, lastSync: new Date() }
+            : int
+        )
+      );
+
+      return { success: true, count: newDocuments.length };
+    } catch (error) {
+      console.error('Error syncing Gmail bills:', error);
+      return {
+        success: false,
+        count: 0,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  };
+
   const value: AppContextType = {
     user,
     isAuthenticated,
@@ -154,6 +235,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     integrations,
     connectIntegration,
     disconnectIntegration,
+    syncGmailBills,
     notifications,
     markNotificationAsRead,
     sidebarCollapsed,
