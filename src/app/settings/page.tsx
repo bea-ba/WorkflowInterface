@@ -415,7 +415,7 @@ export default function SettingsPage() {
               {/* MOCK Note */}
               <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-sm text-blue-800">
-                  <strong>Mock Integration:</strong> In production, clicking "Connect" would:
+                  <strong>Mock Integration:</strong> In production, clicking &quot;Connect&quot; would:
                   <ul className="mt-2 ml-5 list-disc space-y-1">
                     <li>Initiate Google OAuth 2.0 flow</li>
                     <li>Request necessary permissions (read emails, access drive, edit sheets)</li>
