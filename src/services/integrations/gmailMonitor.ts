@@ -1,27 +1,14 @@
 /**
  * Gmail Monitoring Service
  *
- * PLACEHOLDER - Not implemented in MVP
+ * Monitors Gmail for bills from specific senders and extracts attachments.
+ * Currently focused on: electricity, water, and internet bills.
  *
- * In production, this module would:
- * - Monitor Gmail inbox for new emails with attachments
- * - Filter emails by labels/folders
- * - Extract PDF and image attachments
- * - Queue attachments for OCR processing
- * - Use Gmail Push Notifications (webhooks) for real-time monitoring
- *
- * Required packages:
- * - googleapis
- * - bullmq (for job queue)
- *
- * Architecture:
- * 1. User connects Gmail via OAuth
- * 2. Set up Gmail Push Notification webhook
- * 3. When new email arrives, webhook triggers our API
- * 4. API fetches email, extracts attachments
- * 5. Attachments queued for OCR processing
+ * Required packages: googleapis
  */
 
+import { google } from 'googleapis';
+import { getAuthClient } from './googleOAuth';
 import { Document } from '@/types';
 
 export interface GmailMessage {
@@ -37,155 +24,209 @@ export interface GmailAttachment {
   filename: string;
   mimeType: string;
   size: number;
-  data: Buffer;
+  attachmentId: string;
+}
+
+export interface BillFile {
+  messageId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  from: string;
+  subject: string;
+  date: Date;
+  category: 'electricity' | 'water' | 'internet' | 'other';
+  data: string; // base64 encoded file data
 }
 
 /**
- * Set up Gmail push notifications
- * @param userId - User ID to set up monitoring for
- * @param watchLabels - Gmail labels to monitor (e.g., ['INBOX', 'Bills'])
+ * Common bill sender patterns
+ * Expand this list based on actual utility company domains
  */
-export async function setupGmailWatch(
-  userId: string,
-  watchLabels: string[] = ['INBOX']
-): Promise<void> {
-  // PRODUCTION IMPLEMENTATION:
-  // const gmail = google.gmail({ version: 'v1', auth: oauthClient });
-  //
-  // const watchRequest = {
-  //   userId: 'me',
-  //   resource: {
-  //     labelIds: watchLabels,
-  //     topicName: `projects/${PROJECT_ID}/topics/gmail-notifications`,
-  //     labelFilterAction: 'include'
-  //   }
-  // };
-  //
-  // const response = await gmail.users.watch(watchRequest);
-  //
-  // // Store watch info in database
-  // await supabase
-  //   .from('gmail_watches')
-  //   .upsert({
-  //     user_id: userId,
-  //     history_id: response.data.historyId,
-  //     expiration: response.data.expiration
-  //   });
-
-  console.log(`[MOCK] Gmail watch setup for user ${userId} on labels:`, watchLabels);
-}
+const BILL_SENDER_PATTERNS = {
+  electricity: [
+    'pg&e', 'pge.com', 'duke-energy', 'con edison', 'coned.com',
+    'southern company', 'sce.com', 'electric', 'power company'
+  ],
+  water: [
+    'water', 'waterutility', 'water district', 'wastewater',
+    'sewer', 'municipal water'
+  ],
+  internet: [
+    'comcast', 'xfinity.com', 'verizon', 'att.com', 'spectrum.com',
+    'cox.com', 'frontier', 'centurylink', 'optimum', 'isp'
+  ],
+};
 
 /**
- * Process incoming Gmail webhook notification
- * @param notification - Webhook payload from Google
+ * Detect bill category from sender email
  */
-export async function processGmailNotification(
-  notification: any
-): Promise<void> {
-  // PRODUCTION IMPLEMENTATION:
-  // const { emailAddress, historyId } = notification;
-  //
-  // // Get user from email
-  // const user = await getUserByEmail(emailAddress);
-  //
-  // // Fetch new messages since last historyId
-  // const newMessages = await getNewMessages(user.id, historyId);
-  //
-  // // Process each message
-  // for (const message of newMessages) {
-  //   await processMessage(message, user.id);
-  // }
+function detectBillCategory(from: string): 'electricity' | 'water' | 'internet' | 'other' {
+  const lowerFrom = from.toLowerCase();
 
-  console.log('[MOCK] Processing Gmail notification:', notification);
+  for (const [category, patterns] of Object.entries(BILL_SENDER_PATTERNS)) {
+    for (const pattern of patterns) {
+      if (lowerFrom.includes(pattern.toLowerCase())) {
+        return category as 'electricity' | 'water' | 'internet';
+      }
+    }
+  }
+
+  return 'other';
 }
 
 /**
- * Fetch and process a Gmail message
+ * Search Gmail for bills with attachments
+ * @param monthsBack - How many months back to search (default 3)
+ * @returns Array of bill files found
+ */
+export async function searchForBills(monthsBack: number = 3): Promise<BillFile[]> {
+  try {
+    const auth = getAuthClient();
+    const gmail = google.gmail({ version: 'v1', auth });
+
+    // Calculate date range
+    const afterDate = new Date();
+    afterDate.setMonth(afterDate.getMonth() - monthsBack);
+    const afterDateStr = afterDate.toISOString().split('T')[0].replace(/-/g, '/');
+
+    // Search query: emails with attachments after a certain date
+    const query = `has:attachment after:${afterDateStr}`;
+
+    // Get list of messages
+    const response = await gmail.users.messages.list({
+      userId: 'me',
+      q: query,
+      maxResults: 100, // Limit for MVP
+    });
+
+    const messages = response.data.messages || [];
+    console.log(`Found ${messages.length} emails with attachments`);
+
+    const billFiles: BillFile[] = [];
+
+    // Process each message
+    for (const message of messages) {
+      if (!message.id) continue;
+
+      try {
+        const billFile = await extractBillFromMessage(gmail, message.id);
+        if (billFile) {
+          billFiles.push(...billFile);
+        }
+      } catch (error) {
+        console.error(`Error processing message ${message.id}:`, error);
+      }
+    }
+
+    console.log(`Extracted ${billFiles.length} bill files`);
+    return billFiles;
+
+  } catch (error) {
+    console.error('Error searching for bills:', error);
+    throw error;
+  }
+}
+
+/**
+ * Extract bill attachments from a Gmail message
+ * @param gmail - Authenticated Gmail API client
  * @param messageId - Gmail message ID
- * @param userId - User ID
+ * @returns Array of bill files (if any match bill criteria)
  */
-export async function processMessage(
-  messageId: string,
-  userId: string
-): Promise<Document[]> {
-  // PRODUCTION IMPLEMENTATION:
-  // const gmail = google.gmail({ version: 'v1', auth: oauthClient });
-  //
-  // // Get message details
-  // const message = await gmail.users.messages.get({
-  //   userId: 'me',
-  //   id: messageId,
-  //   format: 'full'
-  // });
-  //
-  // // Extract attachments
-  // const attachments = await extractAttachments(message);
-  //
-  // // Filter for supported file types (PDF, images)
-  // const validAttachments = attachments.filter(att =>
-  //   att.mimeType === 'application/pdf' ||
-  //   att.mimeType.startsWith('image/')
-  // );
-  //
-  // // Queue each attachment for OCR processing
-  // const documents = [];
-  // for (const attachment of validAttachments) {
-  //   const doc = await queueForOCR({
-  //     userId,
-  //     sourceType: 'gmail',
-  //     sourceReference: messageId,
-  //     filename: attachment.filename,
-  //     fileData: attachment.data
-  //   });
-  //   documents.push(doc);
-  // }
-  //
-  // return documents;
+async function extractBillFromMessage(gmail: any, messageId: string): Promise<BillFile[]> {
+  // Get full message details
+  const message = await gmail.users.messages.get({
+    userId: 'me',
+    id: messageId,
+    format: 'full',
+  });
 
-  console.log(`[MOCK] Processing message ${messageId} for user ${userId}`);
-  return [];
+  const headers = message.data.payload?.headers || [];
+  const from = headers.find((h: any) => h.name === 'From')?.value || '';
+  const subject = headers.find((h: any) => h.name === 'Subject')?.value || '';
+  const dateStr = headers.find((h: any) => h.name === 'Date')?.value || '';
+  const date = new Date(dateStr);
+
+  // Detect if this is a bill
+  const category = detectBillCategory(from);
+
+  // Only process if it matches a bill category
+  if (category === 'other') {
+    return [];
+  }
+
+  // Extract attachments
+  const attachments = extractAttachmentsFromParts(message.data.payload);
+
+  if (attachments.length === 0) {
+    return [];
+  }
+
+  const billFiles: BillFile[] = [];
+
+  // Download each attachment
+  for (const attachment of attachments) {
+    // Only process PDF and image files
+    if (
+      attachment.mimeType === 'application/pdf' ||
+      attachment.mimeType.startsWith('image/')
+    ) {
+      try {
+        const attachmentData = await gmail.users.messages.attachments.get({
+          userId: 'me',
+          messageId: messageId,
+          id: attachment.attachmentId,
+        });
+
+        billFiles.push({
+          messageId,
+          filename: attachment.filename,
+          mimeType: attachment.mimeType,
+          size: attachment.size,
+          from,
+          subject,
+          date,
+          category,
+          data: attachmentData.data.data, // base64 encoded
+        });
+      } catch (error) {
+        console.error(`Error downloading attachment ${attachment.filename}:`, error);
+      }
+    }
+  }
+
+  return billFiles;
 }
 
 /**
- * Manually scan Gmail for historical emails with attachments
- * @param userId - User ID
- * @param months - How many months back to scan
+ * Recursively extract attachments from message parts
  */
-export async function scanHistoricalEmails(
-  userId: string,
-  months: number = 12
-): Promise<number> {
-  // PRODUCTION IMPLEMENTATION:
-  // const gmail = google.gmail({ version: 'v1', auth: oauthClient });
-  //
-  // const afterDate = new Date();
-  // afterDate.setMonth(afterDate.getMonth() - months);
-  //
-  // // Search for emails with attachments
-  // const query = `has:attachment after:${afterDate.toISOString().split('T')[0]}`;
-  //
-  // const response = await gmail.users.messages.list({
-  //   userId: 'me',
-  //   q: query,
-  //   maxResults: 500
-  // });
-  //
-  // const messageIds = response.data.messages?.map(m => m.id) || [];
-  //
-  // // Process each message
-  // for (const messageId of messageIds) {
-  //   await processMessage(messageId, userId);
-  // }
-  //
-  // return messageIds.length;
+function extractAttachmentsFromParts(payload: any): GmailAttachment[] {
+  const attachments: GmailAttachment[] = [];
 
-  console.log(`[MOCK] Scanning ${months} months of email for user ${userId}`);
-  return 0;
+  function traverse(part: any) {
+    if (part.filename && part.body?.attachmentId) {
+      attachments.push({
+        filename: part.filename,
+        mimeType: part.mimeType || 'application/octet-stream',
+        size: part.body.size || 0,
+        attachmentId: part.body.attachmentId,
+      });
+    }
+
+    if (part.parts) {
+      part.parts.forEach(traverse);
+    }
+  }
+
+  if (payload) {
+    traverse(payload);
+  }
+
+  return attachments;
 }
 
 export default {
-  setupGmailWatch,
-  processGmailNotification,
-  processMessage,
-  scanHistoricalEmails,
+  searchForBills,
 };
