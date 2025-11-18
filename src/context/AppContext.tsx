@@ -8,6 +8,7 @@ import {
   mockIntegrations,
   mockNotifications,
 } from '@/data/mockData';
+import { writeDocumentToSheet } from '@/services/integrations/sheetWriter';
 
 interface AppContextType {
   // User state
@@ -94,9 +95,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const updateDocument = (id: string, updates: Partial<Document>) => {
-    setDocuments(prev =>
-      prev.map(doc => (doc.id === id ? { ...doc, ...updates } : doc))
-    );
+    setDocuments(prev => {
+      const updatedDocs = prev.map(doc => {
+        if (doc.id === id) {
+          const updatedDoc = { ...doc, ...updates };
+
+          // Auto-sync to Sheets when document becomes complete
+          if (
+            updates.status === 'complete' &&
+            doc.status !== 'complete' &&
+            preferences.autoSyncToSheets &&
+            preferences.googleSheetsId &&
+            user?.id
+          ) {
+            // Async sync (don't block UI)
+            writeDocumentToSheet(preferences.googleSheetsId, updatedDoc, user.id).catch(error => {
+              console.error('Failed to sync document to sheets:', error);
+            });
+          }
+
+          return updatedDoc;
+        }
+        return doc;
+      });
+      return updatedDocs;
+    });
   };
 
   const deleteDocument = (id: string) => {
