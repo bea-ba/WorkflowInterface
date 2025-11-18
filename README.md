@@ -1,6 +1,6 @@
 # FinanceFlow MVP - AI-Powered Financial Document Management
 
-A fully functional MVP prototype built with Next.js 14, React, TypeScript, and Tailwind CSS. This prototype demonstrates the complete user interface and user experience for FinanceFlow without requiring backend integrations.
+A fully functional MVP built with Next.js 14, React, TypeScript, and Tailwind CSS. This application includes **real PDF upload and AI extraction** capabilities powered by Supabase and OpenAI.
 
 ## 🎯 What's Included
 
@@ -71,6 +71,92 @@ Since this is a prototype with mock authentication:
 - Enter **any email and password** on the login page
 - Or click **"Continue with Google (Mock)"** for instant access
 - You'll be automatically logged in and redirected to the dashboard
+
+## ⚡ Enable Real PDF Upload (Optional)
+
+The app works with mock data by default, but you can enable **real PDF upload and AI extraction** for electricity bills:
+
+### Step 1: Create Supabase Project
+
+1. Go to [supabase.com](https://supabase.com) and create a free account
+2. Create a new project (takes ~2 minutes to provision)
+3. Go to Project Settings → API
+4. Copy your:
+   - Project URL
+   - `anon public` key
+   - `service_role` key (keep secret!)
+
+### Step 2: Set Up Database
+
+1. In your Supabase project, go to SQL Editor
+2. Open the file `supabase-setup.sql` from this repository
+3. Copy and paste the entire SQL script
+4. Click "Run" to create tables, policies, and storage bucket
+
+### Step 3: Get OpenAI API Key
+
+1. Go to [platform.openai.com](https://platform.openai.com)
+2. Create an account or sign in
+3. Go to API Keys section
+4. Create a new API key
+5. Copy the key (starts with `sk-`)
+
+### Step 4: Configure Environment Variables
+
+1. Copy `.env.example` to `.env.local`:
+   ```bash
+   cp .env.example .env.local
+   ```
+
+2. Edit `.env.local` and add your credentials:
+   ```bash
+   # Supabase
+   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
+
+   # OpenAI
+   OPENAI_API_KEY=sk-your-openai-key-here
+
+   # App URL
+   NEXT_PUBLIC_APP_URL=http://localhost:3000
+   ```
+
+3. Restart your development server:
+   ```bash
+   npm run dev
+   ```
+
+### Step 5: Test PDF Upload
+
+1. Go to the Upload page
+2. Drag and drop an electricity bill PDF
+3. Watch as the system:
+   - Uploads to Supabase Storage ✓
+   - Extracts text with pdf-parse ✓
+   - Uses AI to extract vendor, amount, dates ✓
+   - Saves to database ✓
+   - Shows in Documents list ✓
+
+**That's it!** Your app now has real PDF processing capabilities.
+
+### What Gets Extracted
+
+The AI extraction service (`src/lib/services/ocrService.ts`) extracts:
+- **Vendor**: Utility company name and address
+- **Amounts**: Subtotal, tax, and total amount
+- **Dates**: Bill date, due date, service period
+- **Category**: Automatically set to "Utilities"
+- **Metadata**: Account number, meter number, kWh used
+- **Confidence Scores**: Per-field confidence for validation
+
+Documents with <70% confidence are flagged for review.
+
+### Cost Estimate
+
+- **Supabase**: Free tier includes 500MB storage, 2GB bandwidth
+- **OpenAI**: ~$0.002 per document (using gpt-4o-mini)
+- **Processing**: 100 documents ≈ $0.20
 
 ## 📁 Project Structure
 
@@ -151,20 +237,40 @@ The prototype uses realistic mock data to simulate:
 - **Icons:** Lucide React
 - **File Upload:** React Dropzone
 - **State Management:** React Context API
+- **Database:** Supabase (PostgreSQL)
+- **Storage:** Supabase Storage
+- **AI/OCR:** OpenAI GPT-4o-mini + pdf-parse
 
-## 📝 Mock vs. Production Implementation
+## 📝 What's Implemented
 
-### What's Mock in this MVP
+### ✅ Fully Functional (With Config)
 
-All data and integrations are mocked:
-- ✅ UI/UX is fully functional
-- ✅ Navigation and routing work
-- ✅ Form interactions are real
-- ❌ No actual file uploads (simulated)
-- ❌ No real API calls
-- ❌ No database persistence
-- ❌ No Google OAuth integration
-- ❌ No AI/OCR processing
+When Supabase and OpenAI are configured:
+- ✅ Real PDF file uploads to Supabase Storage
+- ✅ OCR text extraction from PDFs
+- ✅ AI-powered data extraction (vendor, amounts, dates)
+- ✅ Database persistence with real-time updates
+- ✅ Document status tracking (processing, review, complete)
+- ✅ Confidence scoring for extraction quality
+- ✅ Automatic categorization
+
+### 🎨 Mock Data Fallback
+
+Without configuration, app works with:
+- ✅ Mock authentication
+- ✅ Sample electricity bill documents
+- ✅ Dashboard metrics and analytics
+- ✅ All UI/UX features
+- ✅ Navigation and routing
+
+### ⏳ Not Yet Implemented
+
+- ❌ Google OAuth (real)
+- ❌ Gmail monitoring integration
+- ❌ Google Drive sync
+- ❌ Google Sheets integration
+- ❌ Multi-user authentication
+- ❌ Email notifications
 
 ### Placeholder Integration Modules
 
