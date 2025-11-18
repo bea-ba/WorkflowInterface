@@ -6,8 +6,11 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
+  let documentIdForCleanup: string | undefined;
+
   try {
     const { documentId, storagePath } = await request.json();
+    documentIdForCleanup = documentId;
 
     if (!documentId || !storagePath) {
       return NextResponse.json(
@@ -69,9 +72,8 @@ export async function POST(request: NextRequest) {
     console.error('Processing error:', error);
 
     // Update document status to failed if we have the documentId
-    try {
-      const body = await request.json();
-      if (body.documentId) {
+    if (documentIdForCleanup) {
+      try {
         const supabase = getSupabaseAdmin();
         await supabase
           .from('documents')
@@ -79,10 +81,10 @@ export async function POST(request: NextRequest) {
             status: 'failed',
             updated_at: new Date().toISOString(),
           })
-          .eq('id', body.documentId);
+          .eq('id', documentIdForCleanup);
+      } catch (updateError) {
+        console.error('Failed to update document status:', updateError);
       }
-    } catch (updateError) {
-      console.error('Failed to update document status:', updateError);
     }
 
     return NextResponse.json(

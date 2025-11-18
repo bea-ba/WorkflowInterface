@@ -1,10 +1,19 @@
 import OpenAI from 'openai';
 import pdfParse from 'pdf-parse';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+/**
+ * Get OpenAI client with validation
+ */
+function getOpenAIClient(): OpenAI {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error(
+      'OPENAI_API_KEY environment variable is required. Please add it to your .env.local file.'
+    );
+  }
+  return new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+}
 
 /**
  * Extract text from PDF buffer using pdf-parse
@@ -81,6 +90,7 @@ Important rules:
 `;
 
   try {
+    const openai = getOpenAIClient();
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini', // Fast and cost-effective
       messages: [

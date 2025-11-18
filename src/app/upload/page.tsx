@@ -124,6 +124,7 @@ export default function UploadPage() {
   const pollForCompletion = async (fileId: string, documentId: string) => {
     const maxAttempts = 60; // 60 seconds max
     let attempts = 0;
+    let intervalId: NodeJS.Timeout | null = null;
 
     const checkStatus = async () => {
       attempts++;
@@ -144,6 +145,7 @@ export default function UploadPage() {
               f.id === fileId ? { ...f, status: 'complete', progress: 100 } : f
             )
           );
+          if (intervalId) clearInterval(intervalId);
           return true;
         } else if (document?.status === 'failed') {
           // Failed
@@ -154,6 +156,7 @@ export default function UploadPage() {
                 : f
             )
           );
+          if (intervalId) clearInterval(intervalId);
           return true;
         } else if (attempts >= maxAttempts) {
           // Timeout
@@ -168,6 +171,7 @@ export default function UploadPage() {
                 : f
             )
           );
+          if (intervalId) clearInterval(intervalId);
           return true;
         }
 
@@ -175,17 +179,20 @@ export default function UploadPage() {
         return false;
       } catch (error) {
         console.error('Polling error:', error);
+        if (intervalId) clearInterval(intervalId);
         return false;
       }
     };
 
     // Poll every second
-    const interval = setInterval(async () => {
-      const done = await checkStatus();
-      if (done) {
-        clearInterval(interval);
-      }
+    intervalId = setInterval(async () => {
+      await checkStatus();
     }, 1000);
+
+    // Return cleanup function
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
   };
 
   const onDrop = useCallback(
