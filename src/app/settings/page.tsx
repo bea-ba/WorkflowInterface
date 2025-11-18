@@ -13,10 +13,12 @@ import {
   User,
   CreditCard,
   Trash2,
+  RefreshCw,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import MainLayout from '@/components/layout/MainLayout';
 import { formatDate, cn } from '@/lib/utils';
+import { listUserSpreadsheets, initializeSpreadsheet } from '@/services/integrations/sheetWriter';
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -33,6 +35,12 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<'integrations' | 'preferences' | 'account'>('integrations');
   const [connectingType, setConnectingType] = useState<string | null>(null);
   const [localPreferences, setLocalPreferences] = useState(preferences);
+
+  // Sheets configuration
+  const [availableSheets, setAvailableSheets] = useState<any[]>([]);
+  const [selectedSheetId, setSelectedSheetId] = useState<string>('');
+  const [loadingSheets, setLoadingSheets] = useState(false);
+  const [initializingSheet, setInitializingSheet] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -69,9 +77,46 @@ export default function SettingsPage() {
     alert('Preferences saved successfully!');
   };
 
+  const loadUserSpreadsheets = async () => {
+    if (!user?.id) return;
+
+    setLoadingSheets(true);
+    try {
+      const spreadsheets = await listUserSpreadsheets(user.id);
+      setAvailableSheets(spreadsheets);
+    } catch (error) {
+      console.error('Error loading spreadsheets:', error);
+      alert('Failed to load spreadsheets. Please try again.');
+    } finally {
+      setLoadingSheets(false);
+    }
+  };
+
+  const handleInitializeSheet = async () => {
+    if (!selectedSheetId || !user?.id) return;
+
+    setInitializingSheet(true);
+    try {
+      await initializeSpreadsheet(selectedSheetId, user.id);
+      alert('Spreadsheet initialized successfully! All category tabs and headers have been set up.');
+    } catch (error) {
+      console.error('Error initializing spreadsheet:', error);
+      alert('Failed to initialize spreadsheet. Please try again.');
+    } finally {
+      setInitializingSheet(false);
+    }
+  };
+
   const gmail = integrations.find(i => i.type === 'gmail');
   const drive = integrations.find(i => i.type === 'drive');
   const sheets = integrations.find(i => i.type === 'sheets');
+
+  // Load spreadsheets when Sheets gets connected
+  useEffect(() => {
+    if (sheets?.connected && availableSheets.length === 0) {
+      loadUserSpreadsheets();
+    }
+  }, [sheets?.connected]);
 
   return (
     <MainLayout>
@@ -283,6 +328,75 @@ export default function SettingsPage() {
                       )}
                     </div>
                   </div>
+
+                  {/* Spreadsheet Selector - Show when connected */}
+                  {sheets?.connected && (
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <h4 className="text-sm font-medium text-gray-900 mb-3">
+                        Configure Spreadsheet
+                      </h4>
+                      <p className="text-xs text-gray-600 mb-3">
+                        Select a spreadsheet to sync your document data. We'll create organized tabs for each expense category.
+                      </p>
+
+                      <div className="space-y-3">
+                        <div className="flex items-center space-x-2">
+                          <select
+                            value={selectedSheetId}
+                            onChange={(e) => setSelectedSheetId(e.target.value)}
+                            disabled={loadingSheets}
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 text-sm disabled:bg-gray-50 disabled:text-gray-500"
+                          >
+                            <option value="">
+                              {loadingSheets ? 'Loading spreadsheets...' : 'Select a spreadsheet'}
+                            </option>
+                            {availableSheets.map((sheet) => (
+                              <option key={sheet.id} value={sheet.id}>
+                                {sheet.name}
+                              </option>
+                            ))}
+                          </select>
+
+                          <button
+                            onClick={loadUserSpreadsheets}
+                            disabled={loadingSheets}
+                            className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors disabled:opacity-50"
+                            title="Refresh list"
+                          >
+                            <RefreshCw className={cn('h-4 w-4', loadingSheets && 'animate-spin')} />
+                          </button>
+                        </div>
+
+                        {selectedSheetId && (
+                          <button
+                            onClick={handleInitializeSheet}
+                            disabled={initializingSheet}
+                            className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {initializingSheet ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Initializing...
+                              </>
+                            ) : (
+                              'Initialize Spreadsheet'
+                            )}
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="mt-3 p-3 bg-gray-50 rounded-md">
+                        <p className="text-xs text-gray-600">
+                          <strong>What happens when you initialize:</strong>
+                        </p>
+                        <ul className="mt-1 ml-4 list-disc text-xs text-gray-600 space-y-1">
+                          <li>Creates tabs for each category (Utilities, Office Supplies, etc.)</li>
+                          <li>Adds column headers (Date, Vendor, Amount, Status, etc.)</li>
+                          <li>Your existing data remains untouched</li>
+                        </ul>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
