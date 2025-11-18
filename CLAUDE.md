@@ -142,8 +142,8 @@ The project uses Tailwind CSS with a custom color palette defined in `tailwind.c
 - `primary-*`: Brand colors (blue)
 - `success-*`: Green for positive actions
 - `warning-*`: Orange for alerts
-- `error-*`: Red for errors
-- `gray-*`: Neutral tones
+- `danger-*`: Red for errors
+- `gray-*`: Neutral tones (default Tailwind)
 
 Responsive design breakpoints:
 - Desktop: sidebar + main content
