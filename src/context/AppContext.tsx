@@ -1,13 +1,14 @@
 'use client';
 
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { User, Document, Integration, Notification, UserPreferences } from '@/types';
+import { User, Document, Integration, Notification, UserPreferences, DriveFile } from '@/types';
 import {
   mockUser,
   mockDocuments,
   mockIntegrations,
   mockNotifications,
 } from '@/data/mockData';
+import { listFilesInFolder } from '@/services/integrations/driveClient';
 
 interface AppContextType {
   // User state
@@ -27,6 +28,7 @@ interface AppContextType {
   integrations: Integration[];
   connectIntegration: (type: 'gmail' | 'drive' | 'sheets') => Promise<void>;
   disconnectIntegration: (type: 'gmail' | 'drive' | 'sheets') => void;
+  syncDriveFiles: () => Promise<void>;
 
   // Notifications
   notifications: Notification[];
@@ -141,6 +143,103 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPreferences(prev => ({ ...prev, ...updates }));
   };
 
+  // Drive sync methods
+  const convertDriveFileToDocument = (driveFile: DriveFile): Document => {
+    // Create a mock document from Drive file
+    // In production, this would trigger OCR and extraction
+    return {
+      id: `drive-${driveFile.id}`,
+      organizationId: user?.organizationId || 'mock-org',
+      uploadedBy: user?.id || 'mock-user',
+      sourceType: 'drive',
+      sourceReference: driveFile.id,
+      vendorName: 'Unknown Vendor',
+      vendorNormalized: 'unknown-vendor',
+      totalAmount: 0,
+      currency: preferences.currency,
+      documentDate: driveFile.modifiedTime,
+      category: 'Uncategorized',
+      documentType: 'receipt',
+      tags: [],
+      extractionData: {
+        vendor: {
+          name: 'Unknown Vendor',
+          normalizedId: 'unknown-vendor',
+        },
+        amounts: {
+          subtotal: 0,
+          tax: 0,
+          total: 0,
+          currency: preferences.currency,
+        },
+        dates: {
+          issued: driveFile.modifiedTime,
+        },
+        category: 'Uncategorized',
+        documentType: 'receipt',
+        confidenceScores: {
+          overall: 0,
+          perField: {},
+        },
+      },
+      confidenceScore: 0,
+      status: 'pending',
+      fileUrl: driveFile.webViewLink || '',
+      thumbnailUrl: driveFile.thumbnailLink || '',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+  };
+
+  const syncDriveFiles = async () => {
+    const driveIntegration = integrations.find(i => i.type === 'drive');
+
+    if (!driveIntegration?.connected) {
+      console.log('Drive not connected');
+      return;
+    }
+
+    const folderId = preferences.driveMonitoredFolderId;
+    if (!folderId) {
+      console.log('No folder selected for monitoring');
+      return;
+    }
+
+    try {
+      const driveFiles = await listFilesInFolder(folderId);
+
+      // Check which files are new (not already in documents)
+      const existingDriveIds = new Set(
+        documents
+          .filter(doc => doc.sourceType === 'drive')
+          .map(doc => doc.sourceReference)
+      );
+
+      const newFiles = driveFiles.filter(file => !existingDriveIds.has(file.id));
+
+      // Convert new files to documents
+      const newDocuments = newFiles.map(convertDriveFileToDocument);
+
+      // Add new documents
+      if (newDocuments.length > 0) {
+        setDocuments(prev => [...newDocuments, ...prev]);
+
+        // Update last sync time
+        setIntegrations(prev =>
+          prev.map(int =>
+            int.type === 'drive' ? { ...int, lastSync: new Date() } : int
+          )
+        );
+
+        console.log(`Synced ${newDocuments.length} new files from Drive`);
+      } else {
+        console.log('No new files found in Drive folder');
+      }
+    } catch (error) {
+      console.error('Error syncing Drive files:', error);
+    }
+  };
+
   const value: AppContextType = {
     user,
     isAuthenticated,
@@ -154,6 +253,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     integrations,
     connectIntegration,
     disconnectIntegration,
+    syncDriveFiles,
     notifications,
     markNotificationAsRead,
     sidebarCollapsed,
