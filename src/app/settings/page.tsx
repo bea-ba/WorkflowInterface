@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Mail,
@@ -52,6 +52,14 @@ export default function SettingsPage() {
     setLocalPreferences(preferences);
   }, [preferences]);
 
+  // Load spreadsheets when Sheets gets connected
+  useEffect(() => {
+    const sheetsIntegration = integrations.find(i => i.type === 'sheets');
+    if (sheetsIntegration?.connected && availableSheets.length === 0 && user?.id) {
+      loadUserSpreadsheets();
+    }
+  }, [integrations, availableSheets.length, user?.id, loadUserSpreadsheets]);
+
   if (!isAuthenticated) {
     return null;
   }
@@ -77,7 +85,7 @@ export default function SettingsPage() {
     alert('Preferences saved successfully!');
   };
 
-  const loadUserSpreadsheets = async () => {
+  const loadUserSpreadsheets = useCallback(async () => {
     if (!user?.id) return;
 
     setLoadingSheets(true);
@@ -90,7 +98,7 @@ export default function SettingsPage() {
     } finally {
       setLoadingSheets(false);
     }
-  };
+  }, [user?.id]);
 
   const handleInitializeSheet = async () => {
     if (!selectedSheetId || !user?.id) return;
@@ -120,13 +128,6 @@ export default function SettingsPage() {
   const gmail = integrations.find(i => i.type === 'gmail');
   const drive = integrations.find(i => i.type === 'drive');
   const sheets = integrations.find(i => i.type === 'sheets');
-
-  // Load spreadsheets when Sheets gets connected
-  useEffect(() => {
-    if (sheets?.connected && availableSheets.length === 0) {
-      loadUserSpreadsheets();
-    }
-  }, [sheets?.connected]);
 
   return (
     <MainLayout>
