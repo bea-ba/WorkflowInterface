@@ -243,7 +243,7 @@ export default function AnalyticsPage() {
               <div className="ml-3">
                 <h3 className="text-sm font-medium text-green-900">Cost Optimization Opportunity</h3>
                 <p className="mt-1 text-sm text-green-700">
-                  You're spending $2,280/year with Office Depot. Switching to Amazon Business could save approximately $340/year based on similar items.
+                  You&apos;re spending $2,280/year with Office Depot. Switching to Amazon Business could save approximately $340/year based on similar items.
                 </p>
               </div>
             </div>
