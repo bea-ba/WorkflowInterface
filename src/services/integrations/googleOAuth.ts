@@ -12,6 +12,7 @@
  */
 
 import { google } from 'googleapis';
+import type { OAuth2Client } from 'google-auth-library';
 
 export interface GoogleOAuthConfig {
   clientId: string;
@@ -123,7 +124,7 @@ export async function refreshAccessToken(): Promise<string> {
 /**
  * Get authenticated OAuth2 client
  */
-export function getAuthClient(): any {
+export function getAuthClient(): OAuth2Client {
   const tokens = getStoredTokens();
   if (!tokens) {
     throw new Error('No tokens available - user not authenticated');
