@@ -348,7 +348,7 @@ export default function SettingsPage() {
                         Configure Spreadsheet
                       </h4>
                       <p className="text-xs text-gray-600 mb-3">
-                        Select a spreadsheet to sync your document data. We'll create organized tabs for each expense category.
+                        Select a spreadsheet to sync your document data. We&apos;ll create organized tabs for each expense category.
                       </p>
 
                       <div className="space-y-3">
