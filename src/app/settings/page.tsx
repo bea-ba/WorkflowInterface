@@ -13,10 +13,13 @@ import {
   User,
   CreditCard,
   Trash2,
+  Folder,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import MainLayout from '@/components/layout/MainLayout';
 import { formatDate, cn } from '@/lib/utils';
+import { listDriveFolders } from '@/services/integrations/driveClient';
+import { DriveFolder } from '@/types';
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -33,6 +36,9 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<'integrations' | 'preferences' | 'account'>('integrations');
   const [connectingType, setConnectingType] = useState<string | null>(null);
   const [localPreferences, setLocalPreferences] = useState(preferences);
+  const [showFolderModal, setShowFolderModal] = useState(false);
+  const [availableFolders, setAvailableFolders] = useState<DriveFolder[]>([]);
+  const [loadingFolders, setLoadingFolders] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -67,6 +73,34 @@ export default function SettingsPage() {
   const handleSavePreferences = () => {
     updatePreferences(localPreferences);
     alert('Preferences saved successfully!');
+  };
+
+  const handleSelectFolder = async () => {
+    setShowFolderModal(true);
+    setLoadingFolders(true);
+    try {
+      const folders = await listDriveFolders();
+      setAvailableFolders(folders);
+    } catch (error) {
+      console.error('Error loading folders:', error);
+      alert('Failed to load folders. Please try again.');
+    } finally {
+      setLoadingFolders(false);
+    }
+  };
+
+  const handleChooseFolder = (folder: DriveFolder) => {
+    setLocalPreferences({
+      ...localPreferences,
+      driveMonitoredFolderId: folder.id,
+      driveMonitoredFolderName: folder.name,
+    });
+    updatePreferences({
+      driveMonitoredFolderId: folder.id,
+      driveMonitoredFolderName: folder.name,
+    });
+    setShowFolderModal(false);
+    alert(`Folder "${folder.name}" selected successfully!`);
   };
 
   const gmail = integrations.find(i => i.type === 'gmail');
@@ -192,7 +226,7 @@ export default function SettingsPage() {
                       <div className="p-3 bg-success-100 rounded-full">
                         <HardDrive className="h-6 w-6 text-success-600" />
                       </div>
-                      <div>
+                      <div className="flex-1">
                         <h3 className="text-sm font-semibold text-gray-900">Google Drive</h3>
                         <p className="text-sm text-gray-600">
                           Monitor folders for new documents and automatically process them
@@ -203,11 +237,23 @@ export default function SettingsPage() {
                             {drive.lastSync && ` • Last sync: ${formatDate(drive.lastSync, 'relative')}`}
                           </p>
                         )}
+                        {drive?.connected && localPreferences.driveMonitoredFolderName && (
+                          <div className="mt-2 inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
+                            <Folder className="h-3 w-3 mr-1" />
+                            Monitoring: {localPreferences.driveMonitoredFolderName}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
                       {drive?.connected ? (
                         <>
+                          <button
+                            onClick={handleSelectFolder}
+                            className="px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-50 rounded-md transition-colors"
+                          >
+                            {localPreferences.driveMonitoredFolderId ? 'Change Folder' : 'Select Folder'}
+                          </button>
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-success-100 text-success-800">
                             <Check className="h-3 w-3 mr-1" />
                             Connected
@@ -475,6 +521,72 @@ export default function SettingsPage() {
             </div>
           )}
         </div>
+
+        {/* Folder Selection Modal */}
+        {showFolderModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[80vh] overflow-hidden flex flex-col">
+              <div className="p-6 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900">Select Drive Folder</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  Choose a folder to monitor for new financial documents
+                </p>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6">
+                {loadingFolders ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
+                  </div>
+                ) : availableFolders.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Folder className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                    <p className="text-sm text-gray-600">No folders found</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {availableFolders.map((folder) => (
+                      <button
+                        key={folder.id}
+                        onClick={() => handleChooseFolder(folder)}
+                        className={cn(
+                          'w-full text-left p-4 rounded-lg border transition-colors',
+                          localPreferences.driveMonitoredFolderId === folder.id
+                            ? 'border-primary-500 bg-primary-50'
+                            : 'border-gray-200 hover:border-primary-300 hover:bg-gray-50'
+                        )}
+                      >
+                        <div className="flex items-center space-x-3">
+                          <Folder className="h-5 w-5 text-gray-400" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {folder.name}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              Modified {formatDate(folder.modifiedTime, 'relative')}
+                            </p>
+                          </div>
+                          {localPreferences.driveMonitoredFolderId === folder.id && (
+                            <Check className="h-5 w-5 text-primary-600" />
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-6 border-t border-gray-200">
+                <button
+                  onClick={() => setShowFolderModal(false)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </MainLayout>
   );
